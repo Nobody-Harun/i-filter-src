@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>i-FILTER@Cloud Agent</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+
+  <body>
+    <table>
+      <tr>
+        <td class="td_title">URL</td>
+        <td>
+          <!-- <input type="text" id="id_txt_if_url" /> -->
+          <div id="if_url"></div>
+        </td>
+      </tr>
+      <tr>
+        <td class="td_title">企業ID</td>
+        <td>
+          <!-- <input type="text" id="id_txt_cid" /> -->
+          <div class="status_value, td_content" id="cid"></div>
+        </td>
+      </tr>
+      <tr>
+        <td class="td_title">Account</td>
+        <td>
+          <!-- <input type="text" id="id_txt_account_id" /> -->
+          <div class="status_value, td_content" id="account_id"></div>
+        </td>
+      </tr>
+      <tr>
+        <td class="td_title">Status</td>
+        <td>
+          <div class="status_value, td_content" id="account_status"></div>
+          <button id="btn_activation">再アクティベーション</button>
+        </td>
+      </tr>
+
+      <tr>
+        <td class="td_title">動作確認</td>
+        <td>
+          <button id="block_test">ブロックテスト</button>
+          <button id="allow_test">許可テスト</button>
+        </td>
+      </tr>
+    </table>
+
+    <table hidden>
+      <tr>
+        <td class="td_title">Target Mode</td>
+        <td>
+          <form id="entry_target">
+            <input
+              type="radio"
+              id="product"
+              name="mode"
+              value="product"
+              checked
+            />
+            <label for="product">Product</label>
+            <input type="radio" id="public" name="mode" value="public" />
+            <label for="public">Public</label>
+            <input type="radio" id="trunk" name="mode" value="trunk" />
+            <label for="trunk">Trunk</label>
+          </form>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <button id="btn_set_mode">モードセット</button>
+        </td>
+      </tr>
+    </table>
+    <table hidden>
+      <tr>
+        <td class="td_title">Entry Url</td>
+        <td><div class="status_value" id="entry_url"></div></td>
+      </tr>
+      <tr hidden>
+        <td class="td_title">Support ID</td>
+        <td><div class="status_value" id="support_id"></div></td>
+      </tr>
+    </table>
+
+    <button id="btn_set_account" hidden>アカウント設定</button><br />
+    <button id="btn_clear" hidden>初期化</button> <br />
+
+    <footer></footer>
+    <script src="options.js"></script>
+  </body>
+</html>

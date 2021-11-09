@@ -1,0 +1,29 @@
+{
+"update_url": "https://clients2.google.com/service/update2/crx",
+
+  "name": "i-FILTER@Cloud Agent",
+  "version": "1.0.8",
+  "manifest_version": 2,
+  "description": "フィルタリング対象サイトをカテゴリ単位またはURL単位で設定することができます。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "scripts": ["library.js", "background.js", "jquery.js"],
+    "persistent": true
+  },
+  "options_ui": {
+    "page": "options.html",
+    "chrome_style": true
+  },
+  "permissions": [
+    "webRequest",
+    "storage",
+    "*://*/*"
+  ],
+  "storage": {
+    "managed_schema": "schema.json"
+  }
+}

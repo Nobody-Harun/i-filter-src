@@ -1,0 +1,28 @@
+.wrapp {
+  display: flex;
+  flex-direction: column;
+}
+
+td:(:first-child) {
+  padding-bottom: 10px;
+}
+td:not(:first-child) {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.td_title {
+  color: #202124;
+  text-align: center;
+}
+
+.td_content {
+  color: #5f6368;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+tr:not(:last-child) {
+  border-bottom: 1px #dadce0 solid;
+}
