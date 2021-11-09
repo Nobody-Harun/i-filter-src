@@ -5,6 +5,7 @@ Time: 11/9(火) 11:59 | By はる
   <li><a>Version: 1.0.8</a></li>
   <li><a>Name:    i-FILTER@Cloud Agent</a></li>
   <li><a>URL:     <a href="https://chrome.google.com/webstore/detail/kojddmdekekkbcodcbihapcgepebnjgf" style="margin:0;">i-FILTER@Cloud Agent</a>(Chromeウェブストア)</a></li>
+  <li><a href="https://haru-network.net">ファイル詳細</a></li>
 </ul>
 
 ### ガイドブック
