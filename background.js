@@ -20,8 +20,13 @@ const RATING_URL = "https://undefined/rating";
 const D_LOGIN_URL = "https://undefined/dportal";
 
 // ConstParam
+const OPTION_PAGE_URL = "options.html";
 const REGIST_ERR_URL = "resource/error.html";
 const REQ_ERR_URL = "resource/req_error.html";
+const NOT_REGISTER_ERR_URL = "resource/not_activated_error.html";
+const NO_CID_AVAILABLE_ERR_URL = "resource/no_cid_available_error.html";
+const UNLOADED_SETTINGS_ERR_URL = "resource/unloaded_settings_error.html";
+
 const networkFilters = {
   urls: ["<all_urls>"],
   types:[
@@ -37,7 +42,11 @@ const EX_EXTENSION = [".ico", ".png", ".jpg",  ".jpeg", ".gif", ".tiff", ".bmp",
 const BLOCK_TEST_URL = "http://download.daj.co.jp/webfilteringdb_category_block_check/ifb10/43/";
 const ALLOW_TEST_URL = "https://www.daj.jp/";
 
+const REDIRECT_QUERY = 'ChromebookAgentRedirect';
+
 var is_registered = false;
+var open_activate_err = true;
+var open_cid_err = false;
 var is_valid_license = false;
 var is_loaded = false;
 var is_loaded_db = false;
@@ -45,12 +54,16 @@ var if_url;
 var favicon_url;
 var is_chromeOS;
 var is_filtering = true;
+var is_filtering_loaded = false;
+var is_activated = false;
 
 var ratingSystem = new RatingSystem(CID, RATING_URL, "", D_LOGIN_URL);
 
 var requireHeaders = {}
 var ratingRetMap = {};
 var requestBodyMap = {};
+
+var redirectLog = {};
 
 // 初回設定読み込み
 console.log("background.js start");
@@ -63,7 +76,17 @@ chrome.runtime.getPlatformInfo(function(info) {
 
 chrome.storage.onChanged.addListener(function(changes, eventArea){
   if(eventArea == "managed"){
-    checkFilteringState();
+    if(changes.OnlyChromeOS){
+      console.log('OnlyChromeOS changed');
+      checkFilteringState();
+    }
+    if(changes.cid){
+      console.log('cid changed');
+      GetAccountAndRegisterService(false);
+    }
+  } else if(eventArea == "sync"){
+    console.log('sync storage changed');
+    isRegistered(true);
   }
 });
 
@@ -78,6 +101,7 @@ function checkFilteringState(){
     } else {
       is_filtering = true;
     }
+    is_filtering_loaded = true;
     console.log("is_filtering: " + is_filtering);
   });
 }
@@ -96,6 +120,9 @@ chrome.storage.sync.get(
         console.log("start previus_cid=" + items.previus_cid);
         if(items.previus_cid != policies.cid){
           GetAccountAndRegisterService(false);
+        } else {
+          // アクティベーション不要
+          is_activated = true;
         }
       });    
     } else {
@@ -120,6 +147,8 @@ function Initialization() {
       ReloadSetting();
       is_registered = false;
       is_loaded = false;
+      is_filtering_loaded = false;
+      is_activated = false;
     }
   );
   return;
@@ -130,8 +159,14 @@ function ReloadSetting() {
   console.log("background.js ReloadSetting()");
   chrome.storage.local.get(
     {
-      DB_VERSION: "-1",
-      DATABASE: [],
+      DB_VERSION: {
+        "ratingdb": "-1",
+        "extdb": "-1",
+      },
+      DATABASE: {
+        "ratingdb": [],
+        "extdb": [],
+      },
       CONF: {},
       SYS_CONF: {},
       RATING_STATE: {
@@ -143,7 +178,7 @@ function ReloadSetting() {
     },
     function (items) {
       ratingSystem.dbVersion = items.DB_VERSION;
-      ratingSystem.ratingDB = items.DATABASE;
+      ratingSystem.filteringDB = items.DATABASE;
       ratingSystem.conf = items.CONF;
       if (items.CONF[confKey.version]) {
         ratingSystem.confVersion = items.CONF[confKey.version];
@@ -172,13 +207,25 @@ function ReloadSetting() {
       ratingSystem.account = items.ACCOUNT;
       switch (items.LICENSE_STATUS) {
         case 0:
+          open_activate_err = true;
+          open_cid_err = false;
+          is_valid_license = false;
+          break;
         case 3:
         case 4:
         case 5:
+          open_activate_err = false;
+          open_cid_err = false;
+          is_valid_license = false;
+          break;
         case 6:
+          open_activate_err = false;
+          open_cid_err = true;
           is_valid_license = false;
           break;
         default:
+          open_activate_err = false;
+          open_cid_err = false;
           is_valid_license = true;
           break;
       }
@@ -203,9 +250,6 @@ function isCancel(url) {
 }
 
 function isRating(url, type) {
-  if(!is_filtering){
-    return false;
-  }
   // Rating不要
   if (!is_valid_license) {
     return false;
@@ -213,20 +257,6 @@ function isRating(url, type) {
 
   if (url.href.indexOf(if_url) == 0 || url.href.indexOf(ENTRY_URL_DEFINED) == 0) {
     return false;
-  }
-
-  // extension check
-  if (type != 'main_frame' && type != 'sub_frame') {
-    if (url.pathname != null && url.pathname.length > 0) {
-      var filepath = url.pathname.substring(url.pathname.lastIndexOf("/"));
-      var pos = filepath.lastIndexOf(".");
-      if (pos !== -1) {
-        var ext = filepath.substring(pos);
-        if (EX_EXTENSION.indexOf(ext) !== -1) {
-          return false;
-        }
-      }
-    }
   }
 
   if (url.protocol == "https:" && url.hostname.endsWith(".digitalartscloud.com")) {
@@ -239,6 +269,25 @@ function isRating(url, type) {
 
   if (ratingSystem.isInExclusionList(url)) {
     return false;
+  }
+
+  // extension check
+  if (type != 'main_frame' && type != 'sub_frame') {
+    if (url.pathname != null && url.pathname.length > 0) {
+      var filepath = url.pathname.substring(url.pathname.lastIndexOf("/"));
+      var pos = filepath.lastIndexOf(".");
+      if (pos !== -1) {
+        var ext = filepath.substring(pos);
+        if (EX_EXTENSION.indexOf(ext) !== -1) {
+          //除外対象外かチェックする
+          if(ratingSystem.isInExcludeExt(url, ext)){
+            return true;
+          } else {
+            return false;
+          }
+        }
+      }
+    }
   }
 
   return true;
@@ -264,6 +313,49 @@ function beRedirectEntryPage(url, type) {
 
 function onBeforeRequest(details) {
   const { requestId, url, method, type, requestBody } = details;
+  console.log('onBeforeRequest: ' + url);
+
+  //設定読み込みが完了していない かつ エラーページでない場合
+  if((!is_loaded || !is_filtering_loaded || !is_activated) && isBlockURL(url)){
+    if(method != 'GET'){
+      return {cancel: true};
+    }
+
+    var redirectTimes = 1;
+    if(url in redirectLog){
+      redirectTimes = Number(redirectLog[url]);
+      redirectTimes++;
+    }
+
+    redirectLog[url] = redirectTimes;
+
+    var dstObj = new URL(chrome.runtime.getURL(UNLOADED_SETTINGS_ERR_URL));
+    dstObj.searchParams.set('param', btoa(encodeURIComponent(url)));
+
+    return {redirectUrl: dstObj.href}
+
+  } else {
+    if(url in redirectLog){
+      delete redirectLog[url];
+    }
+  }
+
+  // OnlyChromeOS設定
+  if(!is_filtering){
+    return;
+  }
+
+  //「未アクティベーション」「無効(契約IDへの紐づけが行えません)」の場合、エラーページにリダイレクト
+  if(open_activate_err && isBlockURL(url)){
+    //LICENSE_STATUS == 0
+    return {redirectUrl: chrome.runtime.getURL(NOT_REGISTER_ERR_URL)};
+
+  } else if(open_cid_err && isBlockURL(url)){
+    //LICENSE_STATUS == 6
+    return {redirectUrl: chrome.runtime.getURL(NO_CID_AVAILABLE_ERR_URL)};
+  }
+
+
   if (url.indexOf("http") != 0) {
     return;
   }
@@ -475,7 +567,8 @@ function RegisterService(account_id, open_option_window) {
             // エラー画面
             window.open(
               chrome.extension.getURL(REGIST_ERR_URL),
-              "entry_error_page"
+              "entry_error_page",
+              "noopener"
             );
             return;
           }
@@ -501,8 +594,8 @@ function RegisterService(account_id, open_option_window) {
 
         postdata += "&agent_version=" + chrome.runtime.getManifest().version;
 
-        var res = ratingSystem.sendFunc(items.ENTRY_URL, postdata);
-        if ((res.status = 200 && res.data != null)) {
+        var res = ratingSystem.activateFunc(items.ENTRY_URL, postdata);
+        if (res.status == 200 && res.data != null) {
           console.log("entry status=" + res.status);
           console.log("entry cid=" + res.data.cid);
           console.log("entry host=" + res.data.host);
@@ -535,6 +628,7 @@ function RegisterService(account_id, open_option_window) {
                   }
                 }
               );
+              is_activated  = true;
             } else {
               ReloadSetting();
               if (open_option_window) {
@@ -543,7 +637,8 @@ function RegisterService(account_id, open_option_window) {
                 // Error エラー画面表示
                 window.open(
                   chrome.extension.getURL(REGIST_ERR_URL),
-                  "entry_error_page"
+                  "entry_error_page",
+                  "noopener"
                 );
               }
             }
@@ -588,10 +683,12 @@ function RegisterService(account_id, open_option_window) {
           // Error エラー画面表示
           window.open(
             chrome.extension.getURL(REGIST_ERR_URL),
-            "entry_error_page"
+            "entry_error_page",
+            "noopener"
           );
           return;
         }
+        is_activated  = true;
       }
     );
   });
@@ -628,15 +725,37 @@ function isRegistered(with_load_setting) {
   return is_registered;
 }
 
+function isBlockURL(check_url){
+  //block対象ならtrue, allow_urlsに一致する場合false
+  const allow_urls = {
+    'extension_resource': [
+      OPTION_PAGE_URL,
+      REGIST_ERR_URL,
+      NOT_REGISTER_ERR_URL,
+      NO_CID_AVAILABLE_ERR_URL,
+      UNLOADED_SETTINGS_ERR_URL,
+    ],
+  };
+  
+  for(var i=0; i < allow_urls.extension_resource.length; i++){
+    //chrome-extension://拡張機能のID(32桁)/options.htmlといった形式にマッチするかをチェックする
+    var reg = new RegExp('chrome-extension://[a-z]{32}/' + allow_urls.extension_resource[i]);
+    if(reg.test(check_url)){
+      return false;
+    }
+  }
+  return true;
+}
+
 // Window開く
 function openRatingBlockPage() {
   console.log("background.js openRatingBlockPage()");
-  window.open(BLOCK_TEST_URL, "_blank");
+  window.open(BLOCK_TEST_URL, "_blank", "noopener");
 }
 
 function openRatingAllowPage() {
   console.log("background.js openRatingAllowPage()");
-  window.open(ALLOW_TEST_URL, "_blank");
+  window.open(ALLOW_TEST_URL, "_blank", "noopener");
 }
 
 function open_options() {
@@ -645,6 +764,6 @@ function open_options() {
     chrome.runtime.openOptionsPage();
   } else {
     console.log("error.js window.open options.html");
-    window.open(chrome.runtime.getURL("options.html"));
+    window.open(chrome.runtime.getURL(OPTION_PAGE_URL), "_blank", "noopener");
   }
 }

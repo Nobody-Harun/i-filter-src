@@ -33,8 +33,14 @@ class RatingSystem {
     this.ratingbodylen = 0;
     this.sendingbody = false;
     this.DportalLoginUrl = DportalLoginUrl;
-    this.dbVersion = "-1";
-    this.ratingDB = [];
+    this.dbVersion = {
+      "ratingdb": "-1",
+      "extdb": "-1",
+    };
+    this.filteringDB = {
+      "ratingdb": [],
+      "extdb": [],
+    };
     this.confVersion = "-1";
     this.conf = {};
     this.sysVersion = "-1";
@@ -47,14 +53,43 @@ class RatingSystem {
     };
   }
 
+  activateFunc(url, postData){
+    var json_data = "";
+    var status = -1;
+    var headers = {
+      "Content-Type": 'application/x-www-form-urlencoded',
+    };
+    try {
+      $.ajax({
+        url: url,
+        type: "POST",
+        headers: headers,
+        data: postData,
+        dataType: "text",
+        async: false,
+      }).done(function(data, textStatus, jqXHR){ 
+        status = jqXHR.status;
+        if (status == 200) {
+          json_data = JSON.parse(data);
+        }
+      }).fail(function(jqXHR, textStatus, errorThrown){
+        status = jqXHR.status;
+      });
+
+    } catch (e) {}
+
+    return {status: status, data: json_data};
+  }
+
   sendFunc(url, postData, type) {
     var json_data = "";
     var status = -1;
     var headers = {
-      "Content-Type" : 'application/x-www-form-urlencoded',
+      "Content-Type" : 'application/octet-stream',
       "cid" : this.cid,
       "x-rating-header": this.ratingheadlen,
-      "x-rating-dbver": this.dbVersion,
+      "x-rating-dbver": this.dbVersion.ratingdb,
+      "x-rating-extver": this.dbVersion.extdb,
       "x-rating-body": this.ratingbodylen,
       "x-rating-confver": this.confVersion,
       "x-rating-sysver": this.sysVersion
@@ -521,30 +556,69 @@ class RatingSystem {
   }
 
   isHeaderRequired(url, method) {
-    if (!this.ratingDB) {
+    var headerDB = this.filteringDB.ratingdb;
+    if (!headerDB) {
       return false;
     }
 
     var location = new URL(url);
-    for (var i = 0; i < this.ratingDB.length; i++) {
-      if (this.ratingDB[i].length != 2) continue;
+    for (var i = 0; i < headerDB.length; i++) {
+      if (headerDB[i].length != 2) continue;
 
-      var type = this.ratingDB[i][0];
-      var value = this.ratingDB[i][1];
+      var type = headerDB[i][0];
+      var path = headerDB[i][1];
       switch (type) {
         case wapHdrType.URL_PATH:
           var urlpath = location.host + location.pathname;
-          if (urlpath.includes(value)) {
+          if (urlpath.includes(path)) {
             return true;
           }
           break;
         case wapHdrType.FULL_HOST:
-          if (location.hostname === value) {
+          if (location.hostname === path) {
             return true;
           }
           break;
         case wapHdrType.BACKWARD_HOST:
-          if (location.hostname.endsWith(value)) {
+          if (location.hostname.endsWith(path)) {
+            return true;
+          }
+          break;
+        default:
+          break;
+      }
+    }
+    return false;
+  }
+
+  isInExcludeExt(url, ext){
+    var extDB = this.filteringDB.extdb;
+
+    if (!extDB) {
+      return false;
+    }
+
+    var location = new URL(url);
+    for (var i = 0; i < extDB.length; i++) {
+      if (extDB[i].length != 3) continue;
+
+      var type = extDB[i][0];
+      var path = extDB[i][1];
+      var exExt = extDB[i][2];
+      switch (type) {
+        case wapHdrType.URL_PATH:
+          var urlpath = location.host + location.pathname;
+          if (urlpath.includes(path) && ext === exExt) {
+            return true;
+          }
+          break;
+        case wapHdrType.FULL_HOST:
+          if (location.hostname === path && ext === exExt) {
+            return true;
+          }
+          break;
+        case wapHdrType.BACKWARD_HOST:
+          if (location.hostname.endsWith(path) && ext === exExt) {
             return true;
           }
           break;
@@ -810,7 +884,8 @@ class RatingSystem {
     try {
       var req = new XMLHttpRequest();
       req.open("GET", url, false);
-      req.setRequestHeader('x-rating-dbver', this.dbVersion);
+      req.setRequestHeader('x-rating-dbver', this.dbVersion.ratingdb);
+      req.setRequestHeader('x-rating-extver', this.dbVersion.extdb);
       req.send();
 
       if (req.status == 200) {
@@ -820,28 +895,50 @@ class RatingSystem {
     }
   }
 
-  saveRatingDB(data) {
-    if (!data.ratingdb) {
+  saveRatingDB(data){
+    //update check
+    if(Array.isArray(this.filteringDB)){
+      var prevDB = this.filteringDB;
+      var prevDBVersion = this.dbVersion;
+      // Arrayだったものをobjectに変更
+      this.dbVersion = {
+        "ratingdb": prevDBVersion,
+        "extdb": "-1",
+      }
+      this.filteringDB = {
+        "ratingdb": prevDB,
+        "extdb": [],
+      };
+    }
+
+    var dbtypes = Object.keys(this.filteringDB);
+    dbtypes.forEach(dbtype => {
+      this.saveDB(data, dbtype);
+    });
+  }
+
+  saveDB(data, dbtype) {
+    if (!data[dbtype]) {
       return;
     }
 
-    var dbVer = data.ratingdb[dbVersion];
-    if (!dbVer || dbVer === "-1" || dbVer === this.dbVersion) {
+    var dbVer = data[dbtype][dbVersion];
+    if (!dbVer || dbVer === "-1" || dbVer === this.dbVersion[dbtype]) {
       return;
     }
 
-    var db = data.ratingdb[database];
+    var db = data[dbtype][database];
     if (!db) {
       return;
     }
 
-    this.dbVersion = dbVer;
-    this.ratingDB = db;
+    this.dbVersion[dbtype] = dbVer;
+    this.filteringDB[dbtype] = db;
 
     chrome.storage.local.set(
       {
         DB_VERSION: this.dbVersion,
-        DATABASE: this.ratingDB,
+        DATABASE: this.filteringDB,
       },
       function () {}
     );
