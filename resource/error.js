@@ -10,7 +10,7 @@ function open_options() {
     chrome.runtime.openOptionsPage();
   } else {
     console.log("error.js window.open options.html");
-    window.open(chrome.runtime.getURL("options.html"));
+    window.open(chrome.runtime.getURL("options.html"), "_blank", "noopener");
   }
 }
 
